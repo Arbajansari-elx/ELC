@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1"/>
+<title>ElxSummarizer — Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+/* ─── TOKENS ─────────────────────────────────────────────── */
+:root{
+  --bg-a:#ddeeff;--bg-b:#ede8ff;--bg-c:#ffdcec;--bg-d:#dcffe8;
+  --glass:rgba(255,255,255,0.68);
+  --glass-heavy:rgba(255,255,255,0.82);
+  --glass-border:rgba(255,255,255,0.90);
+  --glass-shadow:0 8px 40px rgba(80,100,180,0.10),0 2px 10px rgba(80,100,180,0.06),inset 0 1px 0 rgba(255,255,255,0.95);
+  --glass-shadow-lift:0 20px 60px rgba(80,100,180,0.16),0 4px 20px rgba(80,100,180,0.10),inset 0 1px 0 rgba(255,255,255,1);
+  --ink:#0f1623;--ink-2:#4a5568;--ink-3:#9ca3af;
+  --accent-a:#5b6ef8;--accent-b:#a855f7;--accent-c:#ec4899;
+  --grad:linear-gradient(135deg,var(--accent-a),var(--accent-b),var(--accent-c));
+  --r:20px;--r-sm:12px;
+  --transition:cubic-bezier(.4,0,.2,1);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+body{
+  font-family:'Plus Jakarta Sans',sans-serif;
+  background:linear-gradient(135deg,var(--bg-a) 0%,var(--bg-b) 35%,var(--bg-c) 65%,var(--bg-d) 100%);
+  color:var(--ink);
+  position:relative;
+}
+
+/* ─── ANIMATED BLOBS ─────────────────────────────────────── */
+.blob{position:fixed;border-radius:50%;filter:blur(90px);pointer-events:none;z-index:0}
+.blob-1{width:500px;height:500px;top:-100px;left:-100px;background:radial-gradient(circle,rgba(100,160,255,0.5),transparent 70%);animation:drift1 14s ease-in-out infinite}
+.blob-2{width:400px;height:400px;bottom:-80px;right:-80px;background:radial-gradient(circle,rgba(200,100,255,0.4),transparent 70%);animation:drift2 18s ease-in-out infinite}
+.blob-3{width:300px;height:300px;top:40%;left:40%;background:radial-gradient(circle,rgba(255,120,180,0.3),transparent 70%);animation:drift3 22s ease-in-out infinite}
+@keyframes drift1{0%,100%{transform:translate(0,0) scale(1)}40%{transform:translate(40px,-30px) scale(1.1)}70%{transform:translate(-20px,20px) scale(0.95)}}
+@keyframes drift2{0%,100%{transform:translate(0,0) scale(1)}35%{transform:translate(-30px,25px) scale(1.08)}65%{transform:translate(20px,-15px) scale(0.97)}}
+@keyframes drift3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-40px,30px) scale(1.15)}}
+
+/* ─── PAGES CONTAINER ────────────────────────────────────── */
+#app{
+  position:relative;z-index:1;
+  width:100%;height:100%;
+  display:flex;overflow:hidden;
+}
+.page{
+  width:100%;height:100%;
+  flex-shrink:0;overflow-y:auto;
+  scroll-behavior:smooth;
+  -webkit-overflow-scrolling:touch;
+  transition:transform .45s var(--transition),opacity .45s var(--transition);
+}
+/* slide states */
+.page.hidden-left{transform:translateX(-100%);opacity:0;pointer-events:none;position:absolute;top:0;left:0}
+.page.hidden-right{transform:translateX(100%);opacity:0;pointer-events:none;position:absolute;top:0;left:0}
+.page.active{transform:translateX(0);opacity:1}
+
+/* ─── SCROLLBAR ──────────────────────────────────────────── */
+.page::-webkit-scrollbar{width:4px}
+.page::-webkit-scrollbar-thumb{background:rgba(100,130,200,0.25);border-radius:4px}
+
+/* ─── SHARED LAYOUT ──────────────────────────────────────── */
+.page-inner{max-width:600px;margin:0 auto;padding:0 16px 40px}
+
+/* ─── HEADER ──────────────────────────────────────────────── */
+.hdr{
+  padding:16px;
+  display:flex;align-items:center;gap:12px;
+  position:sticky;top:0;z-index:50;
+  background:rgba(255,255,255,0.6);
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  border-bottom:1px solid rgba(255,255,255,0.8);
+}
+.hdr-back{
+  width:38px;height:38px;border-radius:50%;
+  background:var(--glass-heavy);border:1.5px solid var(--glass-border);
+  box-shadow:var(--glass-shadow);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:16px;transition:.18s;flex-shrink:0;
+}
+.hdr-back:hover{box-shadow:var(--glass-shadow-lift);transform:scale(1.05)}
+.hdr-back:active{transform:scale(.95)}
+.hdr-title{font-weight:700;font-size:16px;flex:1}
+.hdr-badge{
+  font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;
+  padding:4px 10px;border-radius:20px;
+  background:var(--grad);color:#fff;
+}
+.logo-row{display:flex;align-items:center;gap:10px}
+.logo-gem{
+  width:38px;height:38px;border-radius:12px;
+  background:var(--grad);
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Instrument Serif',serif;font-size:17px;color:#fff;font-weight:400;
+  box-shadow:0 4px 20px rgba(91,110,248,0.3);
+}
+.logo-name{font-weight:800;font-size:17px}
+.logo-name em{font-style:normal;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+
+/* ─── GLASS CARD ──────────────────────────────────────────── */
+.card{
+  background:var(--glass);
+  backdrop-filter:blur(32px);-webkit-backdrop-filter:blur(32px);
+  border:1.5px solid var(--glass-border);
+  box-shadow:var(--glass-shadow);
+  border-radius:var(--r);
+  overflow:hidden;
+}
+.card-lift{transition:.22s}
+.card-lift:hover{box-shadow:var(--glass-shadow-lift);transform:translateY(-2px)}
+.card-lift:active{transform:translateY(0) scale(.98)}
+
+/* ─── SOURCE TABS ─────────────────────────────────────────── */
+.src-tabs{display:flex;gap:6px;padding:12px 12px 0;background:transparent}
+.src-tab{
+  flex:1;padding:9px 4px;border-radius:10px;border:none;
+  font-family:'Plus Jakarta Sans',sans-serif;font-size:11px;font-weight:600;
+  cursor:pointer;transition:.18s;color:var(--ink-2);background:rgba(255,255,255,0.4);
+}
+.src-tab.active{
+  background:var(--glass-heavy);border:1.5px solid var(--glass-border);
+  box-shadow:var(--glass-shadow);color:var(--accent-a);
+}
+.src-tab:hover:not(.active){background:rgba(255,255,255,0.6)}
+
+.src-panel{display:none;padding:16px}
+.src-panel.active{display:block}
+
+/* ─── INPUTS ──────────────────────────────────────────────── */
+.inp-row{display:flex;gap:8px;align-items:center}
+.inp{
+  flex:1;border:1.5px solid rgba(180,200,255,0.4);border-radius:12px;
+  background:rgba(255,255,255,0.6);
+  padding:11px 14px;font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;
+  color:var(--ink);outline:none;transition:.2s;
+}
+.inp:focus{border-color:rgba(91,110,248,0.5);background:rgba(255,255,255,0.85);box-shadow:0 0 0 4px rgba(91,110,248,0.1)}
+.inp::placeholder{color:var(--ink-3)}
+textarea.inp{resize:vertical;min-height:110px;line-height:1.55}
+
+.btn-fetch{
+  padding:11px 16px;border-radius:12px;border:none;cursor:pointer;
+  background:var(--grad);color:#fff;
+  font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:700;
+  white-space:nowrap;flex-shrink:0;
+  box-shadow:0 4px 16px rgba(91,110,248,0.35);transition:.18s;
+}
+.btn-fetch:hover{transform:translateY(-1px);box-shadow:0 6px 24px rgba(91,110,248,0.45)}
+.btn-fetch:active{transform:scale(.97)}
+
+/* ─── UPLOAD ZONE ─────────────────────────────────────────── */
+.upload-zone{
+  border:2px dashed rgba(91,110,248,0.3);border-radius:16px;
+  padding:36px 20px;text-align:center;cursor:pointer;transition:.2s;
+  background:rgba(255,255,255,0.4);
+}
+.upload-zone:hover{border-color:rgba(91,110,248,0.6);background:rgba(255,255,255,0.6)}
+.upload-zone .u-icon{font-size:36px;margin-bottom:10px}
+.upload-zone p{color:var(--ink-2);font-size:13px;font-weight:500}
+.upload-zone small{color:var(--ink-3);font-size:11px}
+
+/* ─── PREVIEW PILL ────────────────────────────────────────── */
+.preview-pill{
+  display:none;margin-top:12px;padding:10px 14px;border-radius:12px;
+  background:rgba(91,110,248,0.08);border:1.5px solid rgba(91,110,248,0.18);
+  font-size:12px;color:var(--accent-a);line-height:1.5;
+  max-height:80px;overflow:hidden;position:relative;
+}
+.preview-pill.show{display:block}
+.preview-pill::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:28px;
+  background:linear-gradient(transparent,rgba(230,235,255,0.9));
+}
+.pill-count{margin-top:6px;font-size:11px;color:var(--ink-3);font-style:italic}
+
+/* ─── SOURCE LOADED BANNER ────────────────────────────────── */
+.src-loaded{
+  display:none;margin-top:14px;padding:12px 16px;border-radius:14px;
+  background:rgba(34,197,94,0.08);border:1.5px solid rgba(34,197,94,0.25);
+  display:none;align-items:center;gap:10px;
+}
+.src-loaded.show{display:flex}
+.src-loaded-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;flex-shrink:0;animation:pulse-green 2s infinite}
+@keyframes pulse-green{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,0.5)}50%{box-shadow:0 0 0 6px rgba(34,197,94,0)}}
+.src-loaded p{font-size:12px;font-weight:600;color:#16a34a;flex:1}
+.src-loaded small{font-size:11px;color:#4ade80;font-weight:400}
+
+/* ─── CONTINUE BUTTON ─────────────────────────────────────── */
+.btn-continue{
+  width:100%;padding:15px;border-radius:var(--r);border:none;cursor:pointer;
+  background:var(--grad);color:#fff;
+  font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:700;
+  box-shadow:0 8px 30px rgba(91,110,248,0.35);transition:.22s;
+  display:flex;align-items:center;justify-content:center;gap:8px;margin-top:20px;
+}
+.btn-continue:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 12px 40px rgba(91,110,248,0.45)}
+.btn-continue:not(:disabled):active{transform:scale(.98)}
+.btn-continue:disabled{opacity:.35;cursor:not-allowed}
+
+/* ─── STUDIO ──────────────────────────────────────────────── */
+.src-chip{
+  padding:8px 14px;border-radius:30px;
+  background:var(--glass-heavy);border:1.5px solid var(--glass-border);
+  box-shadow:var(--glass-shadow);
+  font-size:12px;font-weight:600;color:var(--ink-2);
+  display:flex;align-items:center;gap:6px;
+  max-width:100%;overflow:hidden;
+}
+.src-chip-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;flex-shrink:0}
+.src-chip-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ─── CUSTOMIZE ───────────────────────────────────────────── */
+.cust-toggle{
+  width:100%;padding:13px 16px;border-radius:var(--r);
+  background:var(--glass);border:1.5px solid var(--glass-border);
+  box-shadow:var(--glass-shadow);
+  display:flex;align-items:center;justify-content:space-between;
+  cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;font-weight:600;
+  color:var(--ink);transition:.18s;
+}
+.cust-toggle:hover{background:var(--glass-heavy)}
+.cust-arrow{font-size:12px;color:var(--accent-a);transition:.3s}
+.cust-panel{
+  background:var(--glass);border:1.5px solid var(--glass-border);
+  box-shadow:var(--glass-shadow);border-radius:var(--r);padding:16px;
+  display:none;
+}
+.cust-panel.open{display:block}
+.opt-group{margin-bottom:14px}
+.opt-group:last-child{margin-bottom:0}
+.opt-label{font-size:10px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.9px;margin-bottom:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{
+  padding:6px 13px;border-radius:20px;border:1.5px solid rgba(180,200,255,0.4);
+  background:rgba(255,255,255,0.5);font-size:12px;font-weight:500;color:var(--ink-2);
+  cursor:pointer;transition:.15s;font-family:'Plus Jakarta Sans',sans-serif;
+}
+.chip.on{
+  background:rgba(91,110,248,0.1);border-color:rgba(91,110,248,0.4);
+  color:var(--accent-a);font-weight:700;
+  box-shadow:0 0 12px rgba(91,110,248,0.15);
+}
+.chip:hover:not(.on){background:rgba(255,255,255,0.75);color:var(--ink)}
+
+/* ─── STUDIO CARDS ────────────────────────────────────────── */
+.studio-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.sc{
+  background:var(--glass);
+  backdrop-filter:blur(32px);-webkit-backdrop-filter:blur(32px);
+  border:1.5px solid var(--glass-border);
+  box-shadow:var(--glass-shadow);
+  border-radius:18px;padding:16px;cursor:pointer;
+  position:relative;overflow:hidden;transition:.22s;
+  -webkit-tap-highlight-color:transparent;
+}
+.sc::before{
+  content:'';position:absolute;inset:0;opacity:0;transition:.22s;
+  background:radial-gradient(circle at 30% 30%,var(--sc-glow,rgba(91,110,248,0.15)) 0%,transparent 70%);
+}
+.sc:hover{box-shadow:var(--glass-shadow-lift);transform:translateY(-3px)}
+.sc:hover::before{opacity:1}
+.sc:active{transform:scale(.97)}
+.sc.wide{grid-column:1/-1}
+.sc.generating{pointer-events:none;opacity:.65}
+.sc.done::after{
+  content:'✓';position:absolute;top:10px;right:12px;
+  width:18px;height:18px;border-radius:50%;
+  background:rgba(34,197,94,0.12);border:1.5px solid rgba(34,197,94,0.35);
+  font-size:10px;color:#16a34a;display:flex;align-items:center;justify-content:center;
+  font-weight:700;line-height:18px;text-align:center;
+}
+.sc-spinner{
+  position:absolute;top:12px;right:12px;
+  width:16px;height:16px;border-radius:50%;
+  border:2px solid rgba(91,110,248,0.15);border-top-color:var(--accent-a);
+  animation:spin .6s linear infinite;display:none;
+}
+.sc.generating .sc-spinner{display:block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.sc-emoji{font-size:26px;margin-bottom:8px;display:block}
+.sc-title{font-weight:700;font-size:13px;color:var(--ink)}
+.sc-desc{font-size:11px;color:var(--ink-3);margin-top:3px;line-height:1.4}
+
+/* ─── OUTPUT PAGE ─────────────────────────────────────────── */
+.out-meta{
+  padding:14px 16px;
+  background:rgba(255,255,255,0.55);
+  backdrop-filter:blur(20px);
+  border-bottom:1px solid rgba(255,255,255,0.75);
+  display:flex;align-items:center;gap:10px;
+}
+.out-icon-wrap{
+  width:40px;height:40px;border-radius:12px;flex-shrink:0;
+  background:var(--glass-heavy);border:1.5px solid var(--glass-border);
+  box-shadow:var(--glass-shadow);
+  display:flex;align-items:center;justify-content:center;font-size:18px;
+}
+.out-type-name{font-weight:700;font-size:15px;flex:1}
+.out-type-tag{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.7px}
+
+/* Loading state */
+.out-loading{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:16px;padding:60px 20px;text-align:center;
+}
+.out-loading-ring{
+  width:60px;height:60px;border-radius:50%;
+  border:3px solid rgba(91,110,248,0.12);border-top-color:var(--accent-a);
+  animation:spin .8s linear infinite;
+}
+.out-loading p{font-size:14px;font-weight:500;color:var(--ink-2)}
+.out-loading small{font-size:12px;color:var(--ink-3)}
+
+/* Content */
+.out-content{padding:20px 16px;font-size:14px;line-height:1.85;color:var(--ink-2);white-space:pre-wrap;word-break:break-word}
+
+/* Audio script */
+.audio-wrap{padding:16px}
+.hb{display:flex;gap:12px;margin-bottom:18px;align-items:flex-start}
+.hb-av{
+  width:38px;height:38px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:14px;font-family:'Instrument Serif',serif;
+  box-shadow:var(--glass-shadow);
+}
+.hb-av.av-e{background:var(--grad);color:#fff}
+.hb-av.av-a{background:linear-gradient(135deg,#3dd9eb,#0ea5e9);color:#fff}
+.hb-name{font-size:10px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px}
+.hb-bubble{
+  background:var(--glass-heavy);border:1.5px solid var(--glass-border);
+  box-shadow:var(--glass-shadow);border-radius:0 16px 16px 16px;
+  padding:12px 14px;font-size:13px;line-height:1.7;color:var(--ink);
+}
+.hb.hb-right{flex-direction:row-reverse}
+.hb.hb-right .hb-bubble{border-radius:16px 0 16px 16px;background:rgba(91,110,248,0.08);border-color:rgba(91,110,248,0.2)}
+.hb.hb-right .hb-name{text-align:right}
+
+/* Action bar */
+.out-actions{
+  position:sticky;bottom:0;
+  padding:12px 16px;
+  background:rgba(255,255,255,0.75);
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  border-top:1px solid rgba(255,255,255,0.85);
+  display:flex;gap:8px;
+}
+.act-btn{
+  flex:1;padding:12px;border-radius:12px;border:none;cursor:pointer;
+  font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:600;
+  transition:.18s;
+}
+.act-copy{background:var(--glass-heavy);border:1.5px solid var(--glass-border);color:var(--ink-2)}
+.act-copy:hover{background:rgba(255,255,255,0.95);color:var(--ink)}
+.act-save{background:var(--grad);color:#fff;box-shadow:0 4px 16px rgba(91,110,248,0.3)}
+.act-save:hover{box-shadow:0 6px 24px rgba(91,110,248,0.45);transform:translateY(-1px)}
+.act-regen{background:rgba(91,110,248,0.1);border:1.5px solid rgba(91,110,248,0.2);color:var(--accent-a)}
+.act-regen:hover{background:rgba(91,110,248,0.18)}
+
+/* ─── SECTION LABEL ───────────────────────────────────────── */
+.sec-label{font-size:11px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.9px;margin-bottom:10px}
+
+/* ─── HISTORY ─────────────────────────────────────────────── */
+.hist-item{
+  padding:11px 14px;border-radius:14px;
+  background:var(--glass);border:1.5px solid var(--glass-border);
+  box-shadow:var(--glass-shadow);
+  display:flex;align-items:center;gap:10px;margin-bottom:8px;
+  cursor:pointer;transition:.15s;
+}
+.hist-item:hover{box-shadow:var(--glass-shadow-lift);transform:translateY(-1px)}
+.hist-emoji{font-size:16px;flex-shrink:0}
+.hist-info{flex:1;min-width:0}
+.hist-title{font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist-src{font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist-time{font-size:10px;color:var(--ink-3);flex-shrink:0}
+
+/* ─── TOAST ───────────────────────────────────────────────── */
+#toast{
+  position:fixed;bottom:100px;left:50%;transform:translateX(-50%) translateY(30px);
+  background:rgba(15,22,35,0.88);backdrop-filter:blur(20px);
+  color:#fff;font-size:13px;font-weight:600;
+  padding:11px 22px;border-radius:30px;
+  border:1px solid rgba(255,255,255,0.15);
+  pointer-events:none;opacity:0;transition:.3s;z-index:999;white-space:nowrap;
+  box-shadow:0 8px 30px rgba(0,0,0,0.25);
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ─── MISC ────────────────────────────────────────────────── */
+.mt-8{margin-top:8px}.mt-12{margin-top:12px}.mt-16{margin-top:16px}.mt-20{margin-top:20px}
+.gap-12{display:flex;flex-direction:column;gap:12px}
+input[type=file]{display:none}
+</style>
+</head>
+<body>
+
+<!-- Blobs -->
+<div class="blob blob-1"></div>
+<div class="blob blob-2"></div>
+<div class="blob blob-3"></div>
+
+<div id="app">
+
+<!-- ══════════════════════════════════════════════════════════
+     PAGE 1 — SOURCE
+══════════════════════════════════════════════════════════ -->
+<div class="page active" id="p1">
+  <!-- Header -->
+  <div class="hdr">
+    <div class="logo-row">
+      <div class="logo-gem">S</div>
+      <div class="logo-name">Elx<em>Summarizer</em></div>
+    </div>
+    <div class="hdr-badge">STUDIO</div>
+  </div>
+
+  <div class="page-inner" style="padding-top:20px">
+    <!-- Tagline -->
+    <div style="margin-bottom:20px">
+      <p style="font-size:22px;font-weight:800;line-height:1.25;font-family:'Instrument Serif',serif;color:var(--ink)">
+        Add your source. <em style="font-style:italic;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent">AI does the rest.</em>
+      </p>
+      <p style="font-size:13px;color:var(--ink-3);margin-top:6px;font-weight:500">YouTube · Article · Text · PDF</p>
+    </div>
+
+    <!-- Source card -->
+    <div class="card">
+      <div class="src-tabs">
+        <button class="src-tab active" data-tab="yt">▶ YouTube</button>
+        <button class="src-tab" data-tab="art">🌐 Article</button>
+        <button class="src-tab" data-tab="txt">📝 Text</button>
+        <button class="src-tab" data-tab="pdf">📄 PDF</button>
+      </div>
+
+      <!-- YouTube -->
+      <div class="src-panel active" id="sp-yt">
+        <div class="inp-row">
+          <input class="inp" id="ytUrl" type="url" placeholder="Paste YouTube URL here…"/>
+          <button class="btn-fetch" onclick="doYT()">Fetch</button>
+        </div>
+        <div class="preview-pill" id="yt-prev"><span id="yt-prev-txt"></span><div class="pill-count" id="yt-count"></div></div>
+      </div>
+
+      <!-- Article -->
+      <div class="src-panel" id="sp-art">
+        <div class="inp-row">
+          <input class="inp" id="artUrl" type="url" placeholder="Paste article/blog URL…"/>
+          <button class="btn-fetch" onclick="doArt()">Fetch</button>
+        </div>
+        <div class="preview-pill" id="art-prev"><span id="art-prev-txt"></span><div class="pill-count" id="art-count"></div></div>
+      </div>
+
+      <!-- Text -->
+      <div class="src-panel" id="sp-txt">
+        <textarea class="inp" id="rawTxt" placeholder="Paste notes, lecture content, article text…&#10;&#10;Kuch bhi paste karo yahan…" oninput="onRawInput(this)"></textarea>
+        <div class="pill-count mt-8" id="txt-count"></div>
+      </div>
+
+      <!-- PDF -->
+      <div class="src-panel" id="sp-pdf">
+        <div class="upload-zone" onclick="document.getElementById('pdfFile').click()">
+          <div class="u-icon">📄</div>
+          <p>Tap to upload PDF</p>
+          <small>Max ~50 pages</small>
+        </div>
+        <input type="file" id="pdfFile" accept=".pdf" onchange="doPDF(this)"/>
+        <div class="preview-pill" id="pdf-prev"><span id="pdf-prev-txt"></span><div class="pill-count" id="pdf-count"></div></div>
+      </div>
+    </div>
+
+    <!-- Loaded indicator -->
+    <div class="src-loaded mt-12" id="srcLoaded">
+      <div class="src-loaded-dot"></div>
+      <div style="flex:1;min-width:0">
+        <p id="srcLoadedTitle">Source ready!</p>
+        <small id="srcLoadedSub"></small>
+      </div>
+      <span style="font-size:18px">✅</span>
+    </div>
+
+    <!-- Continue -->
+    <button class="btn-continue" id="btnContinue" disabled onclick="goTo(2)">
+      Continue to Studio <span>→</span>
+    </button>
+
+    <!-- History -->
+    <div class="mt-20" id="histSection"></div>
+  </div>
+</div><!-- /p1 -->
+
+
+<!-- ══════════════════════════════════════════════════════════
+     PAGE 2 — STUDIO
+══════════════════════════════════════════════════════════ -->
+<div class="page hidden-right" id="p2">
+  <div class="hdr">
+    <div class="hdr-back" onclick="goTo(1)">←</div>
+    <div class="hdr-title">Studio</div>
+    <div class="hdr-badge">9 TOOLS</div>
+  </div>
+
+  <div class="page-inner" style="padding-top:16px">
+
+    <!-- Source chip -->
+    <div class="src-chip mt-12 mb-16" style="margin-bottom:16px">
+      <div class="src-chip-dot"></div>
+      <span class="src-chip-text" id="studioSrcChip">Source loaded</span>
+    </div>
+
+    <!-- Customize toggle -->
+    <button class="cust-toggle mt-12" onclick="toggleCust()">
+      <span>⚙️ &nbsp;Customize Output</span>
+      <span class="cust-arrow" id="custArr">▼</span>
+    </button>
+    <div class="mt-8">
+      <div class="cust-panel" id="custPanel">
+        <div class="gap-12">
+          <div class="opt-group">
+            <div class="opt-label">Language</div>
+            <div class="chips">
+              <button class="chip on" data-g="lang" data-v="English">English</button>
+              <button class="chip" data-g="lang" data-v="Hindi">Hindi</button>
+              <button class="chip" data-g="lang" data-v="Hinglish">Hinglish</button>
+            </div>
+          </div>
+          <div class="opt-group">
+            <div class="opt-label">Audience</div>
+            <div class="chips">
+              <button class="chip on" data-g="aud" data-v="Student">Student</button>
+              <button class="chip" data-g="aud" data-v="Beginner">Beginner</button>
+              <button class="chip" data-g="aud" data-v="Professional">Professional</button>
+              <button class="chip" data-g="aud" data-v="Expert">Expert</button>
+            </div>
+          </div>
+          <div class="opt-group">
+            <div class="opt-label">Length</div>
+            <div class="chips">
+              <button class="chip" data-g="len" data-v="Brief">Brief</button>
+              <button class="chip on" data-g="len" data-v="Standard">Standard</button>
+              <button class="chip" data-g="len" data-v="Detailed">Detailed</button>
+            </div>
+          </div>
+          <div class="opt-group">
+            <div class="opt-label">Tone</div>
+            <div class="chips">
+              <button class="chip on" data-g="tone" data-v="Casual">Casual</button>
+              <button class="chip" data-g="tone" data-v="Academic">Academic</button>
+              <button class="chip" data-g="tone" data-v="Formal">Formal</button>
+            </div>
+          </div>
+          <div class="opt-group">
+            <div class="opt-label">Focus</div>
+            <div class="chips">
+              <button class="chip on" data-g="focus" data-v="Main Ideas">Main Ideas</button>
+              <button class="chip" data-g="focus" data-v="Technical Details">Technical</button>
+              <button class="chip" data-g="focus" data-v="Practical Applications">Practical</button>
+              <button class="chip" data-g="focus" data-v="Key Facts &amp; Numbers">Key Facts</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Studio grid -->
+    <div class="sec-label mt-20" style="margin-top:20px">Choose what to create</div>
+    <div class="studio-grid" id="studioGrid">
+      <div class="sc" style="--sc-glow:rgba(245,200,66,0.2)" onclick="startGen('summary',this)" id="sc-summary">
+        <div class="sc-spinner"></div>
+        <span class="sc-emoji">📋</span>
+        <div class="sc-title">Summary</div>
+        <div class="sc-desc">Quick overview + TL;DR</div>
+      </div>
+      <div class="sc" style="--sc-glow:rgba(61,217,235,0.2)" onclick="startGen('briefing',this)" id="sc-briefing">
+        <div class="sc-spinner"></div>
+        <span class="sc-emoji">📄</span>
+        <div class="sc-title">Briefing Doc</div>
+        <div class="sc-desc">Executive summary</div>
+      </div>
+      <div class="sc" style="--sc-glow:rgba(74,222,128,0.2)" onclick="startGen('studyguide',this)" id="sc-studyguide">
+        <div class="sc-spinner"></div>
+        <span class="sc-emoji">🎓</span>
+        <div class="sc-title">Study Guide</div>
+        <div class="sc-desc">Concepts + Practice Q&amp;A</div>
+      </div>
+      <div class="sc" style="--sc-glow:rgba(251,146,60,0.2)" onclick="startGen('faq',this)" id="sc-faq">
+        <div class="sc-spinner"></div>
+        <span class="sc-emoji">❓</span>
+        <div class="sc-title">FAQ</div>
+        <div class="sc-desc">Top questions answered</div>
+      </div>
+      <div class="sc" style="--sc-glow:rgba(244,63,94,0.2)" onclick="startGen('quiz',this)" id="sc-quiz">
+        <div class="sc-spinner"></div>
+        <span class="sc-emoji">📝</span>
+        <div class="sc-title">Quiz</div>
+        <div class="sc-desc">10 MCQ + answers</div>
+      </div>
+      <div class="sc" style="--sc-glow:rgba(167,139,250,0.2)" onclick="startGen('terms',this)" id="sc-terms">
+        <div class="sc-spinner"></div>
+        <span class="sc-emoji">📖</span>
+        <div class="sc-title">Key Terms</div>
+        <div class="sc-desc">Glossary of concepts</div>
+      </div>
+      <div class="sc" style="--sc-glow:rgba(251,191,36,0.2)" onclick="startGen('timeline',this)" id="sc-timeline">
+        <div class="sc-spinner"></div>
+        <span class="sc-emoji">⏱️</span>
+        <div class="sc-title">Timeline</div>
+        <div class="sc-desc">Chronological breakdown</div>
+      </div>
+      <div class="sc" style="--sc-glow:rgba(52,211,153,0.2)" onclick="startGen('mindmap',this)" id="sc-mindmap">
+        <div class="sc-spinner"></div>
+        <span class="sc-emoji">🗺️</span>
+        <div class="sc-title">Mind Map</div>
+        <div class="sc-desc">Visual topic structure</div>
+      </div>
+      <div class="sc wide" style="--sc-glow:rgba(168,85,247,0.2)" onclick="startGen('audio',this)" id="sc-audio">
+        <div class="sc-spinner"></div>
+        <span class="sc-emoji">🎙️</span>
+        <div class="sc-title">Audio Overview</div>
+        <div class="sc-desc">Two-host podcast script — like NotebookLM Studio</div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /p2 -->
+
+
+<!-- ══════════════════════════════════════════════════════════
+     PAGE 3 — OUTPUT
+══════════════════════════════════════════════════════════ -->
+<div class="page hidden-right" id="p3">
+
+  <div class="hdr">
+    <div class="hdr-back" onclick="goBackToStudio()">←</div>
+    <div style="flex:1">
+      <div class="hdr-title" id="outTitle">Output</div>
+    </div>
+    <div id="outBadge" class="hdr-badge"></div>
+  </div>
+
+  <!-- Output meta strip -->
+  <div class="out-meta">
+    <div class="out-icon-wrap" id="outIconWrap">📋</div>
+    <div style="flex:1;min-width:0">
+      <div class="out-type-name" id="outTypeName">Summary</div>
+      <div class="out-type-tag" id="outTypeSrc"></div>
+    </div>
+  </div>
+
+  <!-- Scrollable body -->
+  <div id="outBody">
+    <!-- Loading -->
+    <div class="out-loading" id="outLoading">
+      <div class="out-loading-ring"></div>
+      <p id="outLoadMsg">Generating…</p>
+      <small id="outLoadSub">This usually takes a few seconds</small>
+    </div>
+    <!-- Content -->
+    <div id="outText" style="display:none"></div>
+  </div>
+
+  <!-- Sticky action bar -->
+  <div class="out-actions" id="outActions" style="display:none">
+    <button class="act-btn act-copy" onclick="copyOut()">📋 Copy</button>
+    <button class="act-btn act-regen" onclick="regenOut()">↺ Redo</button>
+    <button class="act-btn act-save" onclick="saveOut()">💾 Save</button>
+  </div>
+
+</div><!-- /p3 -->
+
+</div><!-- /app -->
+
+<div id="toast"></div>
+
+<script>
+// ── CONFIG ─────────────────────────────────────────────────────
+const PROXY = 'https://corsproxy.io/?';
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ── STATE ──────────────────────────────────────────────────────
+let srcText  = '';
+let srcTitle = '';
+let cfg = {lang:'English',aud:'Student',len:'Standard',tone:'Casual',focus:'Main Ideas'};
+let curOutput = '';
+let curType   = '';
+let curCard   = null;
+let history   = JSON.parse(localStorage.getItem('elxhist') || '[]');
+
+// ── PAGE NAVIGATION ────────────────────────────────────────────
+function goTo(n) {
+  const pages = [,document.getElementById('p1'),document.getElementById('p2'),document.getElementById('p3')];
+  pages.forEach((p,i)=>{
+    if(!p) return;
+    p.className = 'page ' + (i===n ? 'active' : i<n ? 'hidden-left' : 'hidden-right');
+  });
+  if(n===2){
+    document.getElementById('studioSrcChip').textContent = srcTitle.slice(0,55);
+  }
+}
+function goBackToStudio(){
+  // Reset output page
+  document.getElementById('outBody').scrollTop = 0;
+  goTo(2);
+}
+
+// ── TABS ───────────────────────────────────────────────────────
+document.querySelectorAll('.src-tab').forEach(btn=>{
+  btn.onclick=()=>{
+    document.querySelectorAll('.src-tab').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.src-panel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('sp-'+btn.dataset.tab).classList.add('active');
+  };
+});
+
+// ── CHIPS ──────────────────────────────────────────────────────
+document.querySelectorAll('.chip').forEach(c=>{
+  c.onclick=()=>{
+    document.querySelectorAll(`.chip[data-g="${c.dataset.g}"]`).forEach(x=>x.classList.remove('on'));
+    c.classList.add('on');
+    cfg[c.dataset.g]=c.dataset.v;
+  };
+});
+
+// ── CUSTOMIZE ──────────────────────────────────────────────────
+function toggleCust(){
+  const p=document.getElementById('custPanel');
+  const a=document.getElementById('custArr');
+  p.classList.toggle('open');
+  a.textContent=p.classList.contains('open')?'▲':'▼';
+}
+
+// ── SOURCE LOADED ──────────────────────────────────────────────
+function sourceLoaded(title, text, charStr){
+  srcTitle = title;
+  srcText  = text;
+  const loaded = document.getElementById('srcLoaded');
+  loaded.classList.add('show');
+  document.getElementById('srcLoadedTitle').textContent = title.slice(0,55);
+  document.getElementById('srcLoadedSub').textContent  = charStr;
+  document.getElementById('btnContinue').disabled = false;
+}
+
+// ── YOUTUBE ────────────────────────────────────────────────────
+async function doYT(){
+  const url = document.getElementById('ytUrl').value.trim();
+  if(!url){ toast('URL daalo pehle 🙏'); return; }
+  const vid = extractVID(url);
+  if(!vid){ toast('Valid YouTube URL nahi hai'); return; }
+  toast('⏳ Fetching transcript…',5000);
+  try{
+    const t = await getYTTranscript(vid);
+    setPreview('yt-prev','yt-prev-txt','yt-count',t);
+    sourceLoaded(srcTitle||`YouTube: ${vid}`, t, t.length.toLocaleString()+' chars');
+    toast('✅ Transcript ready!');
+  }catch(e){ toast('❌ '+e.message); }
+}
+
+function extractVID(url){
+  const m=url.match(/(?:v=|youtu\.be\/|embed\/)([a-zA-Z0-9_-]{11})/);
+  return m?m[1]:null;
+}
+
+async function getYTTranscript(vid){
+  const pageRes = await fetch(PROXY+encodeURIComponent(`https://www.youtube.com/watch?v=${vid}`));
+  if(!pageRes.ok) throw new Error('Page fetch failed. Check URL.');
+  const html = await pageRes.text();
+
+  const pm = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});/s);
+  if(!pm) throw new Error('Player response nahi mila. Manual text paste karo.');
+  let pr;
+  try{ pr=JSON.parse(pm[1]); }catch{ throw new Error('Parse error'); }
+
+  // Title
+  srcTitle = pr?.videoDetails?.title || `YouTube: ${vid}`;
+
+  const tracks = pr?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  if(!tracks?.length) throw new Error('Captions nahi hain is video mein.');
+
+  const track = tracks.find(t=>t.languageCode?.startsWith('en'))||tracks[0];
+  const capUrl = track.baseUrl+'&fmt=json3';
+
+  const capRes = await fetch(PROXY+encodeURIComponent(capUrl));
+  if(!capRes.ok) throw new Error('Captions fetch failed');
+  const capJson = await capRes.json();
+
+  const text = capJson.events?.filter(e=>e.segs)
+    .map(e=>e.segs.map(s=>s.utf8||'').join('')).join(' ')
+    .replace(/\s+/g,' ').trim();
+
+  if(!text||text.length<50) throw new Error('Transcript empty. Manual paste karo.');
+  return text;
+}
+
+// ── ARTICLE ────────────────────────────────────────────────────
+async function doArt(){
+  const url = document.getElementById('artUrl').value.trim();
+  if(!url){ toast('URL daalo pehle'); return; }
+  toast('⏳ Fetching article…',5000);
+  try{
+    const res  = await fetch(PROXY+encodeURIComponent(url));
+    if(!res.ok) throw new Error('Fetch failed');
+    const html = await res.text();
+    const tmp  = document.createElement('div');
+    tmp.innerHTML = html;
+    tmp.querySelectorAll('script,style,nav,header,footer,aside,iframe,noscript,svg').forEach(el=>el.remove());
+    const text = (tmp.innerText||tmp.textContent||'').replace(/\s+/g,' ').trim().slice(0,20000);
+    if(text.length<100) throw new Error('Content extract nahi hua. Text paste karo.');
+    const title = tmp.querySelector('title')?.textContent || url.slice(0,50);
+    setPreview('art-prev','art-prev-txt','art-count',text);
+    sourceLoaded(title, text, text.length.toLocaleString()+' chars');
+    toast('✅ Article ready!');
+  }catch(e){ toast('❌ '+e.message); }
+}
+
+// ── RAW TEXT ───────────────────────────────────────────────────
+function onRawInput(el){
+  const t = el.value.trim();
+  document.getElementById('txt-count').textContent = t?t.length.toLocaleString()+' chars':'';
+  if(t.length>50) sourceLoaded(t.slice(0,50)+'…', t, t.length.toLocaleString()+' chars');
+}
+
+// ── PDF ────────────────────────────────────────────────────────
+async function doPDF(input){
+  const file=input.files[0]; if(!file) return;
+  toast('⏳ Reading PDF…',5000);
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    try{
+      const pdf=await pdfjsLib.getDocument({data:new Uint8Array(e.target.result)}).promise;
+      let text='';
+      const max=Math.min(pdf.numPages,50);
+      for(let i=1;i<=max;i++){
+        const pg=await pdf.getPage(i);
+        const c=await pg.getTextContent();
+        text+=c.items.map(s=>s.str).join(' ')+'\n';
+      }
+      text=text.trim();
+      if(!text) throw new Error('Text nahi mila (scanned PDF?)');
+      setPreview('pdf-prev','pdf-prev-txt','pdf-count',text);
+      sourceLoaded(file.name, text, `${max} pages · ${text.length.toLocaleString()} chars`);
+      toast(`✅ ${max} pages read!`);
+    }catch(err){ toast('❌ '+err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function setPreview(pillId, txtId, countId, text){
+  document.getElementById(txtId).textContent   = text.slice(0,300)+'…';
+  document.getElementById(pillId).classList.add('show');
+  document.getElementById(countId).textContent = text.length.toLocaleString()+' chars loaded ✓';
+}
+
+// ── PROMPTS ────────────────────────────────────────────────────
+const CARD_META = {
+  summary   :{icon:'📋',title:'Summary',         badge:'OVERVIEW'},
+  briefing  :{icon:'📄',title:'Briefing Doc',    badge:'BRIEF'},
+  studyguide:{icon:'🎓',title:'Study Guide',     badge:'STUDY'},
+  faq       :{icon:'❓',title:'FAQ',             badge:'Q&A'},
+  quiz      :{icon:'📝',title:'Quiz',            badge:'QUIZ'},
+  terms     :{icon:'📖',title:'Key Terms',       badge:'TERMS'},
+  timeline  :{icon:'⏱️',title:'Timeline',        badge:'TIMELINE'},
+  mindmap   :{icon:'🗺️',title:'Mind Map',        badge:'MAP'},
+  audio     :{icon:'🎙️',title:'Audio Overview',  badge:'PODCAST'},
+};
+
+function buildPrompt(type){
+  const s = `Language:${cfg.lang} | Audience:${cfg.aud} | Length:${cfg.len} | Tone:${cfg.tone} | Focus:${cfg.focus}`;
+  const lim = cfg.len==='Brief'?5000:cfg.len==='Detailed'?14000:9000;
+  const src = srcText.slice(0,lim);
+
+  const map = {
+    summary:`ElxSummarizer | ${s}
+Create a comprehensive summary:
+
+## TL;DR
+(2-3 sentences)
+
+## Overview
+(main summary, 2-3 paragraphs)
+
+## Key Takeaways
+• point 1
+• point 2
+• ...
+
+## Notable Facts / Numbers
+(any stats, dates, important figures if present)
+
+---
+Source:
+${src}`,
+
+    briefing:`ElxSummarizer | ${s}
+Create a professional Briefing Document:
+
+# BRIEFING DOCUMENT
+**Subject:** [topic]
+**Date:** ${new Date().toDateString()}
+**Prepared by:** ElxSummarizer
+
+## Executive Summary
+## Background & Context
+## Key Points
+## Analysis
+## Conclusions
+## Recommendations
+
+---
+Source:
+${src}`,
+
+    studyguide:`ElxSummarizer | ${s}
+Create a comprehensive Study Guide:
+
+# 📚 STUDY GUIDE
+
+## Core Concepts
+(list each concept with brief explanation)
+
+## Detailed Notes
+(section by section breakdown)
+
+## Key Definitions
+**Term** — definition
+
+## Practice Q&A
+Q1. ...?
+Ans: ...
+
+Q2. ...?
+Ans: ...
+(at least 6 Q&A pairs)
+
+## Quick Revision Checklist
+☐ item 1
+☐ item 2
+...
+
+---
+Source:
+${src}`,
+
+    faq:`ElxSummarizer | ${s}
+Generate 10 comprehensive FAQs from this content:
+
+# ❓ FREQUENTLY ASKED QUESTIONS
+
+**Q1: [question]?**
+**A:** [detailed answer]
+
+**Q2: [question]?**
+**A:** [answer]
+
+(continue for all 10)
+
+---
+Source:
+${src}`,
+
+    quiz:`ElxSummarizer | ${s}
+Create a 10-question MCQ quiz:
+
+# 📝 QUIZ
+
+**Q1. [question]?**
+  A) [option]
+  B) [option]
+  C) [option]
+  D) [option]
+✅ Correct: B
+📌 Why: [brief explanation]
+
+(repeat for all 10 questions)
+
+---
+Source:
+${src}`,
+
+    terms:`ElxSummarizer | ${s}
+Extract and explain all key terms:
+
+# 📖 KEY TERMS GLOSSARY
+
+**[Term Name]**
+📝 Definition: ...
+🔗 In Context: how it appears/is used
+⭐ Importance: [1-5 stars rating]
+
+(list ALL important terms from the source)
+
+---
+Source:
+${src}`,
+
+    timeline:`ElxSummarizer | ${s}
+Create a chronological timeline:
+
+# ⏱️ TIMELINE / SEQUENCE
+
+**Phase/Step 1: [title]**
+→ [what happened / what it means]
+→ [key details]
+
+**Phase/Step 2: [title]**
+→ ...
+
+(cover all events/phases in order)
+
+## Summary of Progression
+(brief paragraph on overall flow)
+
+---
+Source:
+${src}`,
+
+    mindmap:`ElxSummarizer | ${s}
+Create an ASCII text Mind Map:
+
+# 🗺️ MIND MAP
+
+🎯 CORE TOPIC: [main topic]
+│
+├── 📌 [Branch 1 Title]
+│   ├── • subtopic
+│   ├── • subtopic
+│   └── • subtopic
+│
+├── 📌 [Branch 2 Title]
+│   ├── • subtopic
+│   └── • subtopic
+│
+├── 📌 [Branch 3 Title]
+│   └── • subtopic
+│
+└── 📌 [Branch 4 Title]
+    └── • subtopic
+
+## Connections
+(how branches relate to each other)
+
+---
+Source:
+${src}`,
+
+    audio:`ElxSummarizer | ${s}
+Create a podcast-style Audio Overview script exactly like Google NotebookLM's Audio Overview.
+Two hosts — natural, insightful, engaging conversation covering ALL main points.
+
+HOSTS:
+- [Elx]: Main explainer — knowledgeable, enthusiastic
+- [Arya]: Curious co-host — asks smart questions, relatable
+
+RULES:
+• Write ONLY as [Elx]: or [Arya]: dialogue lines
+• Natural reactions: "Wait—", "Exactly!", "That's wild", "So basically…"
+• Cover all key points through conversation
+• 900-1200 words total
+• Open with a hook, end with takeaways
+• ${cfg.lang} language
+
+---
+Source:
+${src}`
+  };
+  return map[type]||map.summary;
+}
+
+// ── GENERATE ───────────────────────────────────────────────────
+async function startGen(type, cardEl){
+  if(!srcText){ toast('⚠️ Source pehle add karo!'); return; }
+
+  curType = type;
+  curCard = cardEl;
+
+  const meta = CARD_META[type];
+
+  // Mark card loading
+  cardEl.classList.add('generating');
+
+  // Setup output page
+  document.getElementById('outTitle').textContent    = meta.title;
+  document.getElementById('outBadge').textContent    = meta.badge;
+  document.getElementById('outIconWrap').textContent = meta.icon;
+  document.getElementById('outTypeName').textContent = meta.title;
+  document.getElementById('outTypeSrc').textContent  = srcTitle.slice(0,45);
+  document.getElementById('outLoadMsg').textContent  = `Generating ${meta.title}…`;
+  document.getElementById('outLoading').style.display = 'flex';
+  document.getElementById('outText').style.display   = 'none';
+  document.getElementById('outActions').style.display= 'none';
+
+  goTo(3);
+
+  try{
+    const resp = await fetch('/api/generate',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({prompt:buildPrompt(type)})
+    });
+
+    if(!resp.ok){
+      const err = await resp.json().catch(()=>({error:'Unknown error'}));
+      throw new Error(err.error||`HTTP ${resp.status}`);
+    }
+
+    // Check if streaming or JSON
+    const ct = resp.headers.get('content-type')||'';
+    let fullText = '';
+
+    if(ct.includes('text/event-stream')){
+      // Streaming
+      document.getElementById('outLoading').style.display = 'none';
+      const outEl = document.getElementById('outText');
+      outEl.style.display = 'block';
+      if(type==='audio') outEl.innerHTML='<div class="audio-wrap" id="audioWrap"></div>';
+      else{ outEl.className='out-content'; outEl.textContent=''; }
+
+      const reader  = resp.body.getReader();
+      const decoder = new TextDecoder();
+
+      while(true){
+        const {done,value} = await reader.read();
+        if(done) break;
+        const chunk = decoder.decode(value);
+        chunk.split('\n').filter(l=>l.startsWith('data:')).forEach(line=>{
+          const d=line.slice(6).trim();
+          if(d==='[DONE]') return;
+          try{
+            const j=JSON.parse(d);
+            const delta=j.choices?.[0]?.delta?.content||'';
+            fullText+=delta;
+            if(type==='audio') renderAudio(fullText);
+            else outEl.textContent=fullText;
+          }catch{}
+        });
+      }
+    } else {
+      // JSON response
+      const data = await resp.json();
+      fullText = data.result || data.text || '';
+      document.getElementById('outLoading').style.display='none';
+      const outEl = document.getElementById('outText');
+      outEl.style.display='block';
+      if(type==='audio'){
+        outEl.innerHTML='<div class="audio-wrap" id="audioWrap"></div>';
+        renderAudio(fullText);
+      } else {
+        outEl.className='out-content';
+        outEl.textContent=fullText;
+      }
+    }
+
+    curOutput = fullText;
+    document.getElementById('outActions').style.display='flex';
+
+    // Mark card done
+    cardEl.classList.remove('generating');
+    cardEl.classList.add('done');
+
+    saveHist(type, meta.icon, meta.title, fullText);
+    toast('✅ Done!');
+
+  }catch(e){
+    document.getElementById('outLoading').innerHTML=`
+      <div style="font-size:36px">❌</div>
+      <p style="color:#ef4444">${e.message}</p>
+      <small style="color:var(--ink-3)">API key check karo ya dobara try karo</small>`;
+    cardEl.classList.remove('generating');
+    toast('❌ '+e.message);
+  }
+}
+
+// ── AUDIO RENDER ────────────────────────────────────────────────
+function renderAudio(text){
+  const wrap = document.getElementById('audioWrap');
+  if(!wrap) return;
+  const lines = text.split('\n').filter(l=>l.trim());
+  let html='';
+  for(const line of lines){
+    const eM=line.match(/^\[Elx\]:\s*(.*)/);
+    const aM=line.match(/^\[Arya\]:\s*(.*)/);
+    if(eM){
+      html+=`<div class="hb">
+        <div class="hb-av av-e">E</div>
+        <div style="flex:1"><div class="hb-name">Elx</div><div class="hb-bubble">${esc(eM[1])}</div></div>
+      </div>`;
+    } else if(aM){
+      html+=`<div class="hb hb-right">
+        <div class="hb-av av-a">A</div>
+        <div style="flex:1"><div class="hb-name" style="text-align:right">Arya</div><div class="hb-bubble">${esc(aM[1])}</div></div>
+      </div>`;
+    } else if(line.trim()){
+      html+=`<p style="font-size:12px;color:var(--ink-3);padding:4px 8px;font-style:italic">${esc(line)}</p>`;
+    }
+  }
+  wrap.innerHTML = html||'<div style="padding:20px;color:var(--ink-3);font-size:13px">Generating…</div>';
+}
+
+function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── REGEN ──────────────────────────────────────────────────────
+function regenOut(){
+  if(!curCard||!curType) return;
+  startGen(curType, curCard);
+}
+
+// ── COPY/SAVE ──────────────────────────────────────────────────
+function copyOut(){
+  if(!curOutput) return;
+  navigator.clipboard.writeText(curOutput).then(()=>toast('✅ Copied!'));
+}
+function saveOut(){
+  if(!curOutput) return;
+  const meta=CARD_META[curType];
+  const blob=new Blob([curOutput],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`ElxSummarizer_${meta.title.replace(/\s+/g,'_')}_${Date.now()}.txt`;
+  a.click();
+  toast('💾 Saved!');
+}
+
+// ── HISTORY ────────────────────────────────────────────────────
+function saveHist(type, icon, title, content){
+  history.unshift({type,icon,title,content,src:srcTitle.slice(0,50),time:Date.now()});
+  if(history.length>10) history=history.slice(0,10);
+  localStorage.setItem('elxhist',JSON.stringify(history));
+  renderHist();
+}
+function renderHist(){
+  if(!history.length) return;
+  const sec=document.getElementById('histSection');
+  sec.innerHTML='<div class="sec-label">📁 Recent</div>'+
+    history.slice(0,5).map((h,i)=>`
+      <div class="hist-item" onclick="loadHist(${i})">
+        <span class="hist-emoji">${h.icon}</span>
+        <div class="hist-info">
+          <div class="hist-title">${h.title}</div>
+          <div class="hist-src">${h.src}</div>
+        </div>
+        <span class="hist-time">${ago(h.time)}</span>
+      </div>`).join('');
+}
+function loadHist(i){
+  const h=history[i];
+  curOutput=h.content; curType=h.type;
+  const meta=CARD_META[h.type];
+  document.getElementById('outTitle').textContent=meta.title;
+  document.getElementById('outBadge').textContent=meta.badge;
+  document.getElementById('outIconWrap').textContent=meta.icon;
+  document.getElementById('outTypeName').textContent=meta.title;
+  document.getElementById('outTypeSrc').textContent=h.src;
+  document.getElementById('outLoading').style.display='none';
+  const outEl=document.getElementById('outText');
+  outEl.style.display='block';
+  if(h.type==='audio'){
+    outEl.innerHTML='<div class="audio-wrap" id="audioWrap"></div>';
+    renderAudio(h.content);
+  } else {
+    outEl.className='out-content';
+    outEl.textContent=h.content;
+  }
+  document.getElementById('outActions').style.display='flex';
+  goTo(3);
+}
+function ago(ts){
+  const d=Date.now()-ts;
+  if(d<60000) return 'now';
+  if(d<3600000) return Math.floor(d/60000)+'m';
+  if(d<86400000) return Math.floor(d/3600000)+'h';
+  return Math.floor(d/86400000)+'d';
+}
+
+// ── TOAST ──────────────────────────────────────────────────────
+let toastT;
+function toast(msg,dur=2600){
+  const el=document.getElementById('toast');
+  el.textContent=msg;
+  el.classList.add('show');
+  clearTimeout(toastT);
+  toastT=setTimeout(()=>el.classList.remove('show'),dur);
+}
+
+// ── INIT ───────────────────────────────────────────────────────
+renderHist();
+</script>
+</body>
+</html>
